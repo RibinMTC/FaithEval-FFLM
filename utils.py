@@ -1,7 +1,11 @@
 # encoding = "utf-8"
+from typing import List
+
+from pandas import DataFrame
 from scipy.stats import pearsonr, kendalltau, spearmanr
 from sklearn import metrics
 import numpy as np
+
 
 def choose_best_threshold(labels, scores):
     '''following https://github.com/tingofurro/summac'''
@@ -28,8 +32,8 @@ def get_metrics(predicts, labels, full_score, is_correlation=False, is_balanced_
         print("kendall", kendall)
 
     if is_balanced_acc:
-        labels = [0 if x!=full_score else 1 for x in labels]
-        predicts = [1 if x>threshold else 0 for x in predicts]
+        labels = [0 if x != full_score else 1 for x in labels]
+        predicts = [1 if x > threshold else 0 for x in predicts]
         # balanced Acc
         b_acc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predicts)
         print("balanced-accuracy", b_acc)
