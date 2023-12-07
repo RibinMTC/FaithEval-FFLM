@@ -76,7 +76,7 @@ def hallucination_detection_eval(fflm_score_deltas_val: DataFrame, fflm_score_de
         neutral_label="Faithful")
 
     class_labels = ["Intrinsic", "Extrinsic", "Faithful"]
-    start_range = -1.0
+    start_range = 0.0
     end_range = 1.0
     step_size = 0.25
     values_range = np.round(np.arange(start_range, end_range + step_size, step_size), 2).tolist()
@@ -95,7 +95,7 @@ def faithfulness_detection_eval(fflm_score_deltas_val: DataFrame, fflm_score_del
         fflm_score_deltas=fflm_score_deltas_test, true_label="Faithful")
 
     class_labels = ["Unfaithful", "Faithful"]
-    start_range = -1.0
+    start_range = 0.0
     end_range = 1.0
     step_size = 0.25
     values_range = np.round(np.arange(start_range, end_range + step_size, step_size), 2).tolist()
