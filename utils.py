@@ -1,10 +1,82 @@
 # encoding = "utf-8"
-from typing import List
+import dataclasses
+import json
+from typing import List, Dict
 
 from pandas import DataFrame
 from scipy.stats import pearsonr, kendalltau, spearmanr
 from sklearn import metrics
 import numpy as np
+from sklearn.metrics import balanced_accuracy_score, f1_score, precision_score, recall_score
+
+
+@dataclasses.dataclass
+class FFLMScoreBestThresholdPredictions:
+    all_best_threshold: float = 0.0
+    all_best_f1: float = 0.0
+    all_test: List[float] = None
+    all_test_labels: List[int] = None
+
+
+def compute_scores_from_file(file_path: str, skip_label: str = None) -> DataFrame:
+    delta_1 = []
+    delta_2 = []
+    delta_3 = []
+    labels = []
+    with open(file_path, "r") as f:
+        for line in f:
+            line = json.loads(line.strip())
+            s2s, s2s_doc, lm, lm_doc, prefix, s2s_loss, s2s_loss_doc, lm_loss, lm_loss_doc, prefix_loss = score_calculation(
+                line)
+
+            if skip_label and skip_label == line["label"]:
+                continue
+
+            score_1 = np.mean(np.exp((1 - s2s)) * (lm_loss - s2s_loss))
+            score_2 = np.mean(np.exp((1 - s2s)) * (prefix_loss - s2s_loss))
+            score_3 = np.mean(np.exp((1 - s2s_doc)) * (lm_loss_doc - s2s_loss_doc))
+
+            delta_1.append(score_1)
+            delta_2.append(score_2)
+            delta_3.append(score_3)
+            labels.append(line["label"])
+
+        fflm_score_deltas = DataFrame({"delta_1": delta_1, "delta_2": delta_2, "delta_3": delta_3, "labels": labels})
+        return fflm_score_deltas
+
+
+def find_best_threshold_labels(fflm_score_deltas_val: DataFrame,
+                               fflm_score_delta_test: DataFrame, alpha_range: List[float] = None,
+                               beta_range: List[float] = None) -> FFLMScoreBestThresholdPredictions:
+    best_threshold_predictions = FFLMScoreBestThresholdPredictions()
+    for index, alpha in enumerate(alpha_range):
+        for beta in beta_range:
+            val_delta = alpha * fflm_score_deltas_val["delta_1"] + beta * fflm_score_deltas_val["delta_3"] + (
+                    1 - alpha - beta) * fflm_score_deltas_val["delta_2"]
+
+            best_threshold, best_f1 = choose_best_threshold(fflm_score_deltas_val["labels"], val_delta)
+            if best_f1 > best_threshold_predictions.all_best_f1:
+                print(alpha, beta)
+                best_threshold_predictions.all_best_threshold = best_threshold
+                best_threshold_predictions.all_best_f1 = best_f1
+                best_threshold_predictions.all_test = alpha * fflm_score_delta_test["delta_1"] + beta * \
+                                                      fflm_score_delta_test["delta_3"] + (1 - alpha - beta) * \
+                                                      fflm_score_delta_test["delta_2"]
+                best_threshold_predictions.all_test_labels = fflm_score_delta_test["labels"]
+    return best_threshold_predictions
+
+
+def get_multi_label_metrics(predictions: List[int], labels: List[int], f1_macro_class_labels: List[str]) -> Dict:
+    metrics = ["bacc", "f1_macro", "f1_all", "precision_macro", "recall_macro"]
+    results = {}
+    for metric in metrics:
+        class_labels = None
+        if metric == "f1_all":
+            class_labels = f1_macro_class_labels
+        result = complex_metric(preds=predictions, labels=labels, metric=metric, class_labels=class_labels)
+        print(f"Metric: {metric}: {result}")
+        results[metric] = result
+    return results
 
 
 def choose_best_threshold(labels, scores):
@@ -37,6 +109,26 @@ def get_metrics(predicts, labels, full_score, is_correlation=False, is_balanced_
         # balanced Acc
         b_acc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predicts)
         print("balanced-accuracy", b_acc)
+
+
+def complex_metric(preds, labels, metric="bacc", class_labels=None):
+    match metric:
+        case "bacc":
+            return balanced_accuracy_score(y_true=labels, y_pred=preds)
+        case "f1_macro":
+            return f1_score(y_true=labels, y_pred=preds, average="macro")
+        case "f1_all":
+            f1_scores_array = f1_score(y_true=labels, y_pred=preds, average=None)
+            f1_dict = dict(zip(class_labels, f1_scores_array))
+            return f1_dict
+        case "f1_micro":
+            return f1_score(y_true=labels, y_pred=preds, average="micro")
+        case "precision_macro":
+            return precision_score(y_true=labels, y_pred=preds, average="macro")
+        case "recall_macro":
+            return recall_score(y_true=labels, y_pred=preds, average="macro")
+        case _:
+            raise ValueError(f" Unknown metric {metric}")
 
 
 def score_calculation(content):
